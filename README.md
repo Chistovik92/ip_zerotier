@@ -1,163 +1,107 @@
-ZeroTier Exit Node Setup Script
+# ZeroTier «модем»: локалка для игр + VPN одним скриптом
 
-https://zerotier.com/wp-content/uploads/2023/03/ZeroTier-Logo-FullColor-RGB.svg
+Скрипт `zt_exitnode.sh` превращает Linux-сервер (VPS) в шлюз ZeroTier:
 
-A robust Bash script to configure a Linux server as a ZeroTier exit node/VPN gateway. This script automates the setup process for creating your own VPN server using ZeroTier.
+- **игры по локальной сети с друзьями**: все в одной виртуальной LAN, broadcast включён;
+- **VPN**: весь интернет-трафик клиентов может идти через сервер (Discord, Telegram и т. д.);
+- VPN включается **на каждом устройстве отдельно**: кто хочет только поиграть, играет без VPN.
 
-🌟 Features
+Работает на **бесплатном** аккаунте ZeroTier.
 
-· Automatic Interface Detection - Discovers WAN and ZeroTier interfaces
-· Dual Firewall Support - Configures both iptables and nftables
-· Persistent Rules - Survives reboots with iptables-persistent
-· Idempotent - Safe to run multiple times
-· Colorful Output - Clear visual feedback during installation
-· Error Handling - Comprehensive error checking and reporting
+## Быстрый старт
 
-📋 Prerequisites
-
-· Ubuntu 20.04+ or Debian 11+ (recommended)
-· Root access
-· ZeroTier installed and node joined to network
-· Node authorized in ZeroTier Central
-
-🚀 Quick Start
-
-1. Install ZeroTier (if not already installed)
+На сервере (Ubuntu/Debian/CentOS/Alma/Rocky/Fedora, root):
 
 ```bash
-curl -s https://install.zerotier.com | sudo bash
+curl -fsSL https://raw.githubusercontent.com/Chistovik92/ip_zerotier/main/zt_exitnode.sh -o zt_exitnode.sh
 ```
-
-2. Join ZeroTier Network
 
 ```bash
-sudo zerotier-cli join <Your-Network-ID>
+sudo bash zt_exitnode.sh
 ```
 
-3. Download and Run Setup Script
+Скрипт спросит API-токен ZeroTier:
+
+| Есть токен | Нет токена |
+|---|---|
+| Скрипт сам создаёт или выбирает сеть, назначает IP, включает broadcast, добавляет маршрут `0.0.0.0/0` через сервер и авторизует сервер. | Вы вводите Network ID. Скрипт по шагам показывает, что нажать в веб-панели, ждёт, пока вы это сделаете, и **сам проверяет** результат. |
+
+**Где взять токен:** [my.zerotier.com](https://my.zerotier.com) → *Account* → *API Access Tokens* → *New Token*.
+Если ваш аккаунт уже в новом интерфейсе Central, API там есть только на платных тарифах. Тогда просто нажмите Enter и используйте ручной режим.
+
+Полностью автоматическая установка без вопросов:
 
 ```bash
-# Download the script
-wget https://raw.githubusercontent.com/Chistovik92/ip_ZeroTier/main/zt_exitnode.sh
-
-# Make it executable
-chmod +x zt_exitnode.sh
-
-# Run as root
-sudo ./zt_exitnode.sh
+ZT_TOKEN=ваш_токен sudo -E bash zt_exitnode.sh -y --save-token
 ```
 
-🔧 Manual Installation
+В конце скрипт выводит Network ID, IP сервера и готовые инструкции для друзей. Всё это также сохраняется в `/etc/zt-modem/info.txt`.
+
+## Подключение друзей
+
+**Windows** (автоматически). PowerShell от имени администратора:
+
+```powershell
+irm https://raw.githubusercontent.com/Chistovik92/ip_zerotier/main/client/zt-client-windows.ps1 -OutFile zt-client.ps1
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\zt-client.ps1 -NetworkId <NETWORK_ID> -Vpn on
+```
+
+Клиентский скрипт ставит ZeroTier (через winget), входит в сеть и делает сеть «Частной», чтобы брандмауэр не резал игры. Ещё он ставит адаптеру метрику 1, чтобы игры находили LAN-серверы, а при `-Vpn on` прописывает DNS 1.1.1.1/8.8.8.8 через VPN.
+Режимы: `-Vpn on` (VPN и LAN), `-Vpn off` (только LAN), `-Leave` (выйти из сети).
+
+**Вручную на других устройствах:**
+
+- **Windows/macOS:** [zerotier.com/download](https://www.zerotier.com/download/) → значок в трее → *Join New Network*. Для VPN отметьте в меню сети *Allow Default Route Override*.
+- **Android/iOS:** приложение ZeroTier One → «+» → ID сети. Для VPN включите *Route all traffic through ZeroTier*.
+- **Linux:** `sudo zerotier-cli join <ID>`, для VPN ещё `sudo zerotier-cli set <ID> allowDefault=1`.
+
+Каждое новое устройство нужно **авторизовать**: веб-панель → *Members* → галочка *Auth*. Если при установке вы сохранили токен (`--save-token`), можно прямо на сервере:
 
 ```bash
-git clone https://github.com/Chistovik92/ip_ZeroTier.git
-cd ip_ZeroTier
-chmod +x zt_exitnode.sh
-sudo ./zt_exitnode.sh
+sudo zt-modem members
 ```
 
-📖 What the Script Does
+> На бесплатном тарифе ZeroTier ограничено число устройств в сети, и сервер тоже занимает одно место.
 
-1. Enables IPv4 Forwarding - Configures kernel parameter for routing
-2. Detects Network Interfaces - Finds WAN and ZeroTier interfaces automatically
-3. Configures Firewall Rules:
-   · NAT masquerading for outbound traffic
-   · Forwarding rules for established connections
-   · Compatibility with both iptables and nftables
-4. Makes Rules Persistent - Installs and saves iptables-persistent
-
-🛠 Post-Setup Configuration
-
-After running the script:
-
-1. In ZeroTier Central:
-   · Find your server's ZeroTier IP in "Managed IPs"
-   · Add route: 0.0.0.0/0 via <Your-ZeroTier-IP>
-2. On Client Devices:
-   · Enable "Route all traffic through ZeroTier"
-   · Test connection at 2ip.ru or similar service
-
-🧪 Verification
-
-Check if everything is working:
+## Управление
 
 ```bash
-# Verify IP forwarding
-cat /proc/sys/net/ipv4/ip_forward
-
-# Check iptables rules
-sudo iptables -t nat -L
-sudo iptables -L FORWARD
-
-# Check ZeroTier interface
-ip addr show | grep zt
+sudo zt-modem status      # состояние ZeroTier, правил и сети
+sudo zt-modem members     # участники сети и авторизация новых (нужен токен)
+sudo zt-modem uninstall   # убрать правила и сервис (--purge удалит и ZeroTier)
 ```
 
-🐛 Troubleshooting
+Повторный запуск `zt_exitnode.sh` безопасен: скрипт идемпотентный.
 
-Common Issues
+Опции: `--no-vpn` (только LAN, без выхода в интернет через сервер), `-n <ID>` (существующая сеть), `-s 10.147.20.0/24` (своя подсеть), `--allow-private` (см. ниже), `--help`.
 
-ZeroTier interface not found
+## Почему скрипт не мешает другим сервисам на сервере
 
-· Ensure node is authorized in ZeroTier Central
-· Check ZeroTier service: sudo systemctl status zerotier-one
+- Все правила лежат в **собственных цепочках** `ZTMODEM-FWD`, `ZTMODEM-IN`, `ZTMODEM-NAT`, `ZTMODEM-MSS` (или в таблице nft `ztmodem`). Правила Docker, ufw, fail2ban и прочих сервисов не трогаются. `iptables-persistent` не используется, поэтому снимок чужих правил не сохраняется.
+- NAT применяется **только к трафику из подсети ZeroTier**. Собственный трафик сервера и контейнеров не меняется.
+- Правила восстанавливает systemd-сервис `zt-modem` после `zerotier-one`, Docker, ufw, firewalld и nftables.
+- С firewalld скрипт работает через отдельную зону `ztmodem`.
+- Клиентам VPN по умолчанию **закрыт доступ** к приватным сетям за сервером (10/8, 172.16/12, 192.168/16, 100.64/10, 169.254/16), в том числе к metadata-сервису облака. Открыть его можно флагом `--allow-private`.
+- Включается MSS clamping, чтобы через VPN не «висели» сайты и загрузки.
+- Если на сервере стояла **старая версия** этого скрипта, её правила (MASQUERADE на весь трафик) удаляются автоматически. Для `/etc/iptables/rules.v4` сохраняется бэкап.
 
-No internet access through exit node
+## Проблемы
 
-· Verify route is set in ZeroTier Central
-· Check firewall rules: sudo iptables -L FORWARD -v
+| Симптом | Что сделать |
+|---|---|
+| `ACCESS_DENIED` / нет IP | Авторизуйте устройство в *Members* |
+| Друзья не видят игру по LAN | В настройках сети включите *Enable Broadcast*. На Windows сеть ZeroTier должна быть «Частной», а игра разрешена в брандмауэре. Попробуйте подключиться по IP из ZeroTier |
+| VPN не работает | Проверьте маршрут `0.0.0.0/0 via <IP сервера>` в *Managed Routes* и включённый *Allow Default Route Override* на клиенте. Затем `sudo zt-modem status` |
+| Discord/Telegram всё ещё блокируются | Причина может быть в DNS или IPv6 провайдера. Поставьте DNS 1.1.1.1 (клиентский скрипт делает это сам) и отключите IPv6 на основном адаптере |
+| Медленно, высокий пинг | `zerotier-cli peers`: если у сервера `RELAY`, откройте UDP 9993 у хостера (фаервол в панели VPS) |
+| Нет `/dev/net/tun` (OpenVZ/LXC) | Включите TUN/TAP в панели хостера |
+| После `systemctl restart nftables` пропал NAT | `sudo systemctl restart zt-modem` |
 
-Rules don't persist after reboot
+Логи: `journalctl -u zt-modem -u zerotier-one`.
 
-· Reinstall persistent package: sudo apt-get install --reinstall iptables-persistent
+## Лицензия
 
-Debug Commands
-
-```bash
-# Check routing table
-ip route
-
-# Monitor traffic
-sudo tcpdump -i zt*
-
-# Check ZeroTier status
-sudo zerotier-cli status
-sudo zerotier-cli listnetworks
-```
-
-🔒 Security Notes
-
-· This script enables IP forwarding which changes system security posture
-· Ensure your server is properly secured with a firewall
-· Regularly update your system and ZeroTier
-· Monitor for unusual traffic patterns
-
-📁 File Structure
-
-```
-ip_ZeroTier/
-├── zt_exitnode.sh          # Main setup script
-├── README.md              # This file
-└── LICENSE               # License file
-```
-
-🤝 Contributing
-
-Contributions are welcome! Please feel free to submit pull requests or open issues for bugs and feature requests.
-
-📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-⚠️ Disclaimer
-
-This script is provided as-is without any warranties. Use at your own risk. Ensure you have proper authorization to run exit node services and comply with your hosting provider's terms of service.
-
-📞 Support
-
-· ZeroTier Documentation: https://docs.zerotier.com/
-· ZeroTier Community: https://zerotier.com/community/
-
----
-
-Note: Remember to authorize your node in ZeroTier Central before running the script!
+MIT (см. [LICENSE](LICENSE)). Используйте в соответствии с правилами вашего хостера и законодательством.
